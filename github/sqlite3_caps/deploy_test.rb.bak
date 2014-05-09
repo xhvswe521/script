@@ -1,0 +1,231 @@
+namespace :deploy_test do
+  desc "deploy:package"
+  task :package, :on_error => :continue do
+    
+    # set variables
+    unless variables.include?(:build_label)
+      set(:build_label) do
+        Capistrano::CLI.ui.ask " * please specify the build label to deploy: "
+      end 
+    end
+    servers = find_servers_for_task(current_task)
+    targets = Commons.targets_by_roles(servers)
+
+
+    # whether run in a correct mode
+    Commons.whether_nake_running(targets)
+    Commons.whether_run_against_whole_pool(targets)
+    Commons.confirm_info()
+
+    if ENV['HOSTS']
+      Mylogger.info("Affected hosts:#{servers.join(",")}","cap #{current_task.fully_qualified_name} HOSTS=#{ENV['HOSTS']}")
+    elsif ENV['ROLES']
+      Mylogger.info("Affected hosts:#{servers.join(",")}","cap #{current_task.fully_qualified_name} ROLES=#{ENV['ROLES']}")
+    end
+    
+    # check before deployment
+    command = "readlink -f /nas/deployed"
+    used_build = capture("#{command}")
+    puts("  * use build: #{build_label} before deployment")
+    puts("  * use build: #{used_build} before deployment")
+    
+    # deploy
+    command = "/nas/reg/bin/naslink -b #{build_label}; "
+    run("
+        if [ -f /var/www/maintenance/in-pool.html ]; then
+          if [ `cat /var/www/maintenance/in-pool.html` == 'true' ]; then
+            echo 'machine in service, can not do anything';
+            exit 1; 
+          fi;
+        fi;
+        #{command}")
+begin
+    $retry=5
+    $num=0
+    until Thread.current[:failed_sessions].length<1 do
+        puts "  * \033[1m\033[31mfailed blades:\033[0m#{Thread.current[:failed_sessions].join(",")}"
+        ENV['ROLES']=nil
+        ENV['HOSTS']=Thread.current[:failed_sessions].join(",")
+        Thread.current[:failed_sessions].clear
+        run("#{command}")
+        $num=$num+1
+        break if $num >= $retry
+    end
+end  
+    # check after deployment 
+    command = "readlink -f /nas/deployed"
+    used_build = capture("#{command}")
+    used_build.chomp!()
+    puts("  * use build: #{used_build} after deployment")
+    if Thread.current[:failed_sessions].length>=1
+      puts "  * \033[1m\033[31mfailed blades:\033[0m#{Thread.current[:failed_sessions].join(",")}"
+    end
+    # complete
+    puts("  * complete deploy:env operation")  
+
+	#deal the data for database
+	servers = servers.to_a-Thread.current[:failed_sessions]
+	puts "Servers for task:"
+	puts servers
+	puts "Targets for task:"
+	puts targets
+	puts "Old_Label=#{used_build}"
+	puts "New_Label=#{build_label}"
+	puts current_task
+	Databse.Deploy_data(servers,"#{build_label}","deploy:package")
+  end
+
+  desc "deploy_test:rollback"
+  task :rollback, :on_error => :continue do
+
+	#deploy for each host or roles
+	def deploy_rollback(pre_build_label)
+	
+
+	if	ENV['HOSTS']
+#		ENV['HOSTS'] = host	
+		puts "EXEC HOTST"
+    	servers = find_servers_for_task(current_task)
+    	targets = Commons.targets_by_roles(servers)
+	 
+		command = "/nas/reg/bin/naslink -b #{pre_build_label};"
+    	run("
+        if [ -f /var/www/maintenance/in-pool.html ]; then
+          if [ `cat /var/www/maintenance/in-pool.html` == 'true' ]; then
+            echo 'machine in service, can not do anything';
+            exit 1; 
+          fi;
+        fi;
+        #{command}")
+	elsif ENV['ROLES']	
+#		ENV['ROLES'] = host
+		puts "EXEC ROLES="
+#		puts ENV['ROLES']
+    	servers = find_servers_for_task(current_task)
+    	targets = Commons.targets_by_roles(servers)
+	 
+		command = "/nas/reg/bin/naslink -b #{pre_build_label};"
+    	run("
+        if [ -f /var/www/maintenance/in-pool.html ]; then
+          if [ `cat /var/www/maintenance/in-pool.html` == 'true' ]; then
+            echo 'machine in service, can not do anything';
+            exit 1; 
+          fi;
+        fi;
+        #{command}")
+		
+	end
+begin
+    $retry=5
+    $num=0
+    until Thread.current[:failed_sessions].length<1 do
+#        puts "  * \033[1m\033[31mfailed blades:\033[0m#{Thread.current[:failed_sessions].join(",")}"
+        ENV['ROLES']=nil
+        ENV['HOSTS']=Thread.current[:failed_sessions].join(",")
+        Thread.current[:failed_sessions].clear
+        run("#{command}")
+        $num=$num+1
+        if $num >= $retry
+        puts "  * \033[1m\033[31mfailed blades:\033[0m#{Thread.current[:failed_sessions].join(",")}"
+		break
+		end
+	end
+end  
+
+    # check after deployment 
+    command = "readlink -f /nas/deployed"
+    used_build = capture("#{command}")
+    used_build.chomp!()
+    puts("  * use build: #{used_build} after deployment")
+    if Thread.current[:failed_sessions].length>=1
+      puts "  * \033[1m\033[31mfailed blades:\033[0m#{Thread.current[:failed_sessions].join(",")}"
+    end
+    # complete
+    puts("  * complete deploy:env operation")  
+	servers = servers.to_a-Thread.current[:failed_sessions]
+    Thread.current[:failed_sessions].clear
+	puts "Exec server:"
+	puts servers
+	Databse.Deploy_data(servers,"#{pre_build_label}","deploy:rollback")
+	end
+	
+	#prepare the data from DB
+#begin
+
+ #  targets = Commons.targets_by_roles(servers)
+	
+	label_host = Hash.new
+    if ENV['HOSTS']
+		puts "EXEC HOTST=..........."
+		hostlist = ENV['HOSTS'].split(",")
+		#make the same hostname into group by label
+		hostlist.each{|v|
+			host = v
+			pre_build_label = Databse.Deploy_Rollback_H(host)
+			if pre_build_label.to_s == ""
+					puts "Don't  have pre_label of #{host}"
+			elsif label_host.has_key?("#{pre_build_label}")
+					label_host["#{pre_build_label}"].push(host)
+			elsif 
+					new_label_host = Array.new
+					label_host["#{pre_build_label}"] = new_label_host
+					label_host["#{pre_build_label}"].push(host)
+
+			end
+		}	
+		#Loop deploy_rollback by label		
+		label_host_array = label_host.to_a
+		length = label_host_array.length
+		i = 0
+		while i<length do
+			ENV['HOSTS'] = label_host_array[i][1].join(",")
+			pre_build_label = label_host_array[i][0]
+    		servers = find_servers_for_task(current_task)
+      		Mylogger.info("Affected hosts:#{servers.join(",")}","cap #{current_task.fully_qualified_name} HOSTS=#{ENV['HOSTS']}")
+			deploy_rollback("#{pre_build_label}")
+			i=i+1
+		end
+    elsif ENV['ROLES']
+		rolelist = ENV['ROLES'].split(",")
+		rolelist.each{|v|
+				role = v
+#				ENV['HOSTS'] = nil
+#				ENV['ROLES'] = role
+				pre_build_label = Databse.Deploy_Rollback_R(role)	
+
+				if pre_build_label.to_s == ""
+						puts "Don't  have pre_label of #{role}"
+				elsif label_host.has_key?("#{pre_build_label}")
+						label_host["#{pre_build_label}"].push(role)
+				elsif 
+						new_label_host = Array.new
+						label_host["#{pre_build_label}"] = new_label_host
+						label_host["#{pre_build_label}"].push(role)
+				end
+
+				
+		}
+		#Loop deploy_rollback by label		
+		label_host_array = label_host.to_a
+		length = label_host_array.length
+		i = 0
+		while i<length do
+			ENV['ROLES'] = label_host_array[i][1].join(",")
+			pre_build_label = label_host_array[i][0]
+    		servers = find_servers_for_task(current_task)
+      		Mylogger.info("Affected hosts:#{servers.join(",")}","cap #{current_task.fully_qualified_name} ROLES=#{ENV['ROLES']}")
+			puts ENV['ROLES'],pre_build_label
+			deploy_rollback("#{pre_build_label}")
+			i=i+1
+		end	
+    end
+
+
+#rescue Exception => e
+#		 puts "Exception occured"
+#		 puts e
+#end
+
+
+end   
+end
