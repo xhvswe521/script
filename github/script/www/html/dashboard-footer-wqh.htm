@@ -1,0 +1,209 @@
+<HTML>
+<HEAD>
+<TITLE>DashBoard</TITLE>
+<script type="text/javascript">
+
+//create XMLHttpRequest object
+var xmlHttp;
+function create_XMLHttpRequest()
+{
+	var xmlHttp=null;
+	if(window.XMLHttpRequest)
+	{
+		xmlHttp=new XMLHttpRequest();
+	}
+	else if(window.ActiveXObject)
+	{
+		var aVersions=["MSXML2.XMLHttp.5.0","MSXML2.XMLHttp.4.0","MSXML2.XMLHttp.3.0","MSXML2.XMLHttp","Microsoft.XMLHttp"];
+		for(var i=0;i<aVersions.length;i++ )
+		{
+			try
+			{
+				var xmlHttp=new ActiveXObject(aVersions);
+				return xmlHttp;
+			}
+			catch(oError)
+			{
+			alert('Create XMLHttp failed!');
+			}
+		}
+
+	}	
+return xmlHttp;
+alert(xmlHttp);
+}
+
+
+function AjaxSearch()
+{
+	var searchword;
+	searchword=escape(document.getElementById("searchword").value);
+	xmlHttp = create_XMLHttpRequest();
+	if (xmlHttp==null)
+	  {
+  	alert ("Browser does not support HTTP Request");
+  	return;
+ 	 }
+	var url="/cgi-bin/search.php?var1=SRWPINT&SWord="+searchword.toString();	
+//	var url="/cgi-bin/dashboard-stubhub-wqh.php?SRWPINT";
+
+	xmlHttp.onreadystatechange=stateChanged;
+	xmlHttp.open("GET",url,true);
+//	xmlHttp.send("searchword="+searchword);
+	xmlHttp.send(null);
+
+	
+	alert("Status:" + xmlHttp.status + " (" + xmlHttp.statusText + ")");
+	alert("Responds:" + xmlHttp.responseText);
+	alert("URL:" + url);
+
+	
+}
+function stateChanged() 
+{ 
+	if ((xmlHttp.readyState==4 || xmlHttp.readyState=="complete") && xmlHttp.status==200)
+	{
+//	window.parent.frames["mid"].frames["SRWPINT"].src = "\"/cgi-bin/search.php?var1=SRWPINT&SWord=\"+searchword.toString()";
+		 alert("URL:" + url);
+	//	window.parent.document.getElementById("SRWPINT").src=url;
+	//	window.parent.document.getElementById("SRWPINT").src="/cgi-bin/search.php?var1=SRWPINT&SWord=dsc";
+		window.parent.document.getElementById("SRWPINT").src="frame_a.html";
+	}	
+}
+</script>
+</HEAD>
+<BODY text=#808080>
+
+	<div id="search-box">
+		<input type="text" id=searchword onkeydown="if(event.keyCode==13) Search();" size="20" name="search_value"  style="border:1px #000 soild;text-align:center;background-color:#FFFFFF" onfocus="style.backgroundColor='#FFFF00'"onblur="style.backgroundColor='#FFFFFF'" >
+		<input  type="button" value="search"  onclick="Search()" />
+	</div>
+
+<center><B>@ 2010-2014 StubHub, Inc. All rights reserved.</B></center>
+<center>
+
+	<div>
+		<label>auto-refresh</label><input type="checkbox" name="refresh"
+			value="refresh" id="refresh_checkbox"
+			onclick="AutoRefreshWidget.checkboxValueChanged()" />
+		<label>interval:</label>
+		<select
+			id="refresh_selection" onchange="AutoRefreshWidget.selectValueChanged(this)">
+			<option value="5">5</option>
+			<option value="10" selected="selected">10</option>
+			<option value="20">20</option>
+			<option value="30">30</option>
+			<option value="60">60</option>
+		</select>
+		</select>
+
+	</div>
+
+<script type="text/javascript">
+function Search()
+{
+	var searchword;
+	searchword=escape(document.getElementById("searchword").value);
+	//alert("You need to input the key word!")
+	window.parent.document.getElementById("SRWPINT").src="/cgi-bin/search.php?var1=SRWPINT&SWord=" + searchword;
+	window.parent.document.getElementById("SRWPEXT").src="/cgi-bin/search.php?var1=SRWPEXT&SWord=" + searchword;
+	window.parent.document.getElementById("HOSTING").src="/cgi-bin/search.php?var1=HOSTING&SWord=" + searchword;
+	window.parent.document.getElementById("SBL").src="/cgi-bin/search.php?var1=SBL&SWord=" + searchword;
+
+}
+
+</script>
+<script type="text/javascript">
+(function(window){
+		 var 
+		 handle = null,
+		 refreshCookie  = "auto_refresh",
+		 intervalCookie = "refresh_interval",
+		 checkbox = document.getElementById("refresh_checkbox"),
+		 select = document.getElementById("refresh_selection"),
+
+		 AutoRefreshWidget = {
+
+checkboxValueChanged: function(){
+if (checkbox.checked) {
+var interval = parseInt(select.value);
+CookieUtil.setCookie(refreshCookie, 1);
+CookieUtil.setCookie(intervalCookie, interval);
+if (handle)
+window.clearInterval(handle);
+handle = setInterval(AutoRefreshWidget.refresh, interval * 1000);
+}
+else{
+if(handle)
+	window.clearInterval(handle);
+CookieUtil.delCookie(refreshCookie);
+CookieUtil.delCookie(intervalCookie);
+}
+},
+
+selectValueChanged: function(elem){
+			    if (checkbox.checked) {
+				    if (handle)
+					    window.clearInterval(handle);
+				    var interval = parseInt(elem.value);
+				    handle = setInterval(AutoRefreshWidget.refresh, interval * 1000);
+				    CookieUtil.setCookie(refreshCookie, 1);
+				    CookieUtil.setCookie(intervalCookie, interval);
+			    }
+		    },
+
+refresh: function(){
+		 // cancel the last refresh immediately         
+		 if(checkbox.checked)
+			 window.top.location.reload();
+	 },
+
+init: function(){
+	      if(CookieUtil.getCookie(refreshCookie) == "1"){
+		      var interval = CookieUtil.getCookie(intervalCookie);
+		      checkbox.checked = true;
+		      select.value     = interval;
+		      setInterval(AutoRefreshWidget.refresh, parseInt(interval) * 1000);
+	      }
+      }
+},
+
+	CookieUtil = {
+
+setCookie: function(name, value){
+		   var Days = 30;
+		   var exp = new Date();
+		   exp.setTime(exp.getTime() + Days * 24 * 60 * 60 * 1000);
+		   document.cookie = name + "=" + escape(value) + ";expires="
+			   + exp.toGMTString();
+	   },
+
+getCookie: function(name){
+		   var arr = document.cookie.match(new RegExp("(^| )" + name
+					   + "=([^;]*)(;|$)"));
+		   if (arr != null)
+			   return unescape(arr[2]);
+		   return null;
+	   },
+
+delCookie: function(name){
+		   var exp = new Date();
+		   exp.setTime(exp.getTime() - 1);
+		   var cval = CookieUtil.getCookie(name);
+		   if (cval != null)
+			   document.cookie = name + "=" + cval + ";expires="
+				   + exp.toGMTString();
+	   }
+
+	};
+
+window.AutoRefreshWidget = AutoRefreshWidget;
+})(window);
+
+AutoRefreshWidget.init();
+</script>
+
+
+</BODY>
+</HTML>
+

@@ -1,0 +1,117 @@
+<HTML>
+<HEAD>
+<TITLE>DashBoard</TITLE>
+</HEAD>
+<BODY text=#808080>
+<center><B>@ 2010-2014 StubHub, Inc. All rights reserved.</B></center>
+<center>
+<body>
+	<div>
+		<label>auto-refresh</label><input type="checkbox" name="refresh"
+			value="refresh" id="refresh_checkbox"
+			onclick="AutoRefreshWidget.checkboxValueChanged()" />
+		<label>interval:</label><select
+			id="refresh_selection" onchange="AutoRefreshWidget.selectValueChanged(this)">
+			<option value="5">5</option>
+			<option value="10" selected="selected">10</option>
+			<option value="20">20</option>
+			<option value="30">30</option>
+			<option value="60">60</option>
+		</select>
+		</select>
+	</div>
+
+	<script type="text/javascript">
+	(function(window){
+		var 
+			handle = null,
+			refreshCookie  = "auto_refresh",
+			intervalCookie = "refresh_interval",
+			checkbox = document.getElementById("refresh_checkbox"),
+			select = document.getElementById("refresh_selection"),
+			
+			AutoRefreshWidget = {
+				
+				checkboxValueChanged: function(){
+					if (checkbox.checked) {
+						var interval = parseInt(select.value);
+						CookieUtil.setCookie(refreshCookie, 1);
+						CookieUtil.setCookie(intervalCookie, interval);
+						if (handle)
+							window.clearInterval(handle);
+						handle = setInterval(AutoRefreshWidget.refresh, interval * 1000);
+					}
+					else{
+						if(handle)
+							window.clearInterval(handle);
+						CookieUtil.delCookie(refreshCookie);
+						CookieUtil.delCookie(intervalCookie);
+					}
+				},
+				
+				selectValueChanged: function(elem){
+					if (checkbox.checked) {
+						if (handle)
+							window.clearInterval(handle);
+						var interval = parseInt(elem.value);
+						handle = setInterval(AutoRefreshWidget.refresh, interval * 1000);
+						CookieUtil.setCookie(refreshCookie, 1);
+						CookieUtil.setCookie(intervalCookie, interval);
+					}
+				},
+				
+				refresh: function(){
+					// cancel the last refresh immediately         
+					if(checkbox.checked)
+						window.top.location.reload();
+				},
+				
+				init: function(){
+					if(CookieUtil.getCookie(refreshCookie) == "1"){
+						var interval = CookieUtil.getCookie(intervalCookie);
+						checkbox.checked = true;
+						select.value     = interval;
+						setInterval(AutoRefreshWidget.refresh, parseInt(interval) * 1000);
+					}
+				}
+			},
+			
+			CookieUtil = {
+				
+				setCookie: function(name, value){
+					var Days = 30;
+					var exp = new Date();
+					exp.setTime(exp.getTime() + Days * 24 * 60 * 60 * 1000);
+					document.cookie = name + "=" + escape(value) + ";expires="
+							+ exp.toGMTString();
+				},
+				
+				getCookie: function(name){
+					var arr = document.cookie.match(new RegExp("(^| )" + name
+							+ "=([^;]*)(;|$)"));
+					if (arr != null)
+						return unescape(arr[2]);
+					return null;
+				},
+			
+				delCookie: function(name){
+					var exp = new Date();
+					exp.setTime(exp.getTime() - 1);
+					var cval = CookieUtil.getCookie(name);
+					if (cval != null)
+						document.cookie = name + "=" + cval + ";expires="
+								+ exp.toGMTString();
+				}
+				
+			};
+		
+		window.AutoRefreshWidget = AutoRefreshWidget;
+	})(window);
+	
+	AutoRefreshWidget.init();
+	</script>
+</body>
+
+</BODY>
+</HTML>
+

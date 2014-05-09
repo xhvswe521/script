@@ -1,0 +1,175 @@
+Rb13.13.0-SNAPSHOT-221675.8-000	
+Backup Config and NAS locations (/nas/utl/backup)
+
+
+cap checkup:health  ROLES=abi01,mci01,byx01,brx01,lcx01,ilg00,sli01,lgi01,lsi01,mqb00,job00,atx01 2>&1 | grep out | sort
+cap checkup:health  ROLES=tkn05,pay05,sts05 2>&1 | grep out | sort
+
+cap checkup:package  ROLES=abi01,mci01,byx01,brx01,lcx01,ilg00,sli01,lgi01,lsi01,mqb00,job00,atx01 2>&1 | grep out | sort
+cap checkup:package  ROLES=tkn05,pay05,sts05 2>&1 | grep out | sort
+
+cap checkup:code  ROLES=abi01,mci01,byx01,brx01,lcx01,ilg00,sli01,lgi01,lsi01,mqb00,job00,atx01 2>&1 | grep out | sort
+cap checkup:code  ROLES=tkn05,pay05,sts05 2>&1 | grep out | sort
+
+
+cap backup:code  ROLES=abi01,mci01,byx01,brx01,lcx01,ilg00,sli01,lgi01,lsi01,mqb00,job00,atx01 
+cap backup:code  ROLES=tkn05,pay05,sts05
+
+Rsync the build
+[COMMAND] ./replicator -l 13.13.0-SNAPSHOT-221675.8-000
+
+[COMMAND]
+cap inpool_out ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a;
+cap inpool_out ROLES=tkn05a,pay05a,sts05a
+
+
+
+STOP HTTPD and JBOSS on pool A
+[COMMAND] 
+cap stop:httpd  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a;
+cap stop:httpd  ROLES=tkn05a,pay05a,sts05a
+
+cap stop:jboss  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a;
+cap stop:jboss  ROLES=tkn05a,pay05a,sts05a
+
+Deploy package on pool A
+[COMMAND]
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a;
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=tkn05a,pay05a,sts05a
+
+
+
+[DOING] Start HTTPD and JBOSS on pool A
+[COMMAND]
+cap start:httpd  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap start:httpd  ROLES=tkn05a,pay05a,sts05a
+
+cap start:jboss  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap start:jboss  ROLES=tkn05a,pay05a,sts05a
+
+cap inpool_out ROLES=job00b
+cap stop:jboss ROLES=job00b
+cap inpool_out ROLES=jos05b
+cap stop:jboss ROLES=jos05b
+
+
+
+CF
+ssh srwp01mgt002.stubprod.com
+
+Restart CFN on Pool A Blades 
+[COMMAND] cap inpool_out ROLES=cfs01a
+[COMMAND] /nas/reg/bin/sinstall -tag rb_ecomm_13_13_cfm_cf
+           cap restart:cf ROLES=cfs01a
+
+SWAP Pool A/B
+[COMMAND]
+cap inpool_in ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a,cfs01a;cap inpool_out ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b,cfs01b;
+cap inpool_in ROLES=tkn05a,pay05a,sts05a;cap inpool_out ROLES=tkn05b,pay05b,sts05b
+
+
+FLEX
+Mgt002
+#/nas/reg/deploy/bin/deploy-flex-to-prod /nas/reg/deploy/releases/rb_ecomm_13_4_1/2013-03-15/flex-files.20130315.010326+0000.tar
+
+STATIC
+
+/nas/reg/bin/sinstall -tag rb_ecomm_13_13_static_cf
+
+cap stop:jboss ROLES=job00b,mqb00b,sli01b,abi01b
+
+
+
+
+Deploy Pool B
+
+Stop httpd and jboss; Deploy package; Start httpd and jboss
+[COMMAND]
+cap stop:httpd ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b;
+cap stop:httpd ROLES=tkn05b,pay05b,sts05b
+
+cap stop:jboss  ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b;
+cap stop:jboss  ROLES=tkn05b,pay05b,sts05b
+
+Deploy package on pool B
+[COMMAND]
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b;
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=tkn05b,pay05b,sts05b
+
+
+cap start:jboss  ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b
+cap start:jboss  ROLES=tkn05b,pay05b,sts05b
+
+cap start:httpd  ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b
+cap start:httpd  ROLES=tkn05b,pay05b,sts05b
+
+
+
+Restart cf on pool B
+[COMMAND]
+cap restart:cf ROLES=cfs01b
+
+Put back in pool B
+[COMMAND]
+
+cap inpool_in ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b,cfs01b
+cap inpool_in ROLES=tkn05b,pay05b,sts05b
+
+
+#Rollback Plan
+6.2
+cap start:jboss ROLES=job00b,mqb00b,sli01b,abi01b
+cap start:jboss ROLES=
+
+[COMMAND]
+cap inpool_in ROLES=abi01b,mci01b,byx01b,brx01b,lcx01b,ilg00b,sli01b,lgi01b,lsi01b,mqb00b,job00b,atx01b,cfs01b;cap inpool_out ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a,cfs01a
+cap inpool_in ROLES=tkn05b,pay05b,sts05b;cap inpool_out ROLES=tkn05a,pay05a,sts05a
+
+
+6.4
+
+ssh srwp01mgt002.stubprod.com
+/usr/local/reg/bin/sinstall -tag rb13_13_cfm_cf -rollback
+/usr/local/reg/bin/sinstall -tag rb13_13_static_cf -rollback
+
+cap restart:cf ROLES=cfs01a
+
+#/nas/reg/deploy/bin/deploy-flex-to-prod /nas/reg/deploy/releases/rb1303/2013-01-29/flex-files.20130129.013415+0000.tar rollback
+
+6.6
+
+[COMMAND]
+cap stop:httpd ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap stop:httpd ROLES=tkn05a,pay05a,sts05a
+
+cap stop:jboss  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap stop:jboss  ROLES=tkn05a,pay05a,sts05a
+
+Deploy package on pool A
+[COMMAND]
+
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a 
+
+cap -s build_label=13.13.0-SNAPSHOT-221675.8-000 deploy:package ROLES=tkn05a,pay05a,sts05a 
+
+Start HTTPD and JBOSS on pool A
+[COMMAND]
+cap start:httpd ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap start:httpd ROLES=tkn05a,pay05a,sts05a
+
+cap start:jboss  ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a
+cap start:jboss  ROLES=tkn05a,pay05a,sts05a
+
+
+cap restart:cf ROLES=cfs01a
+
+cap inpool_in ROLES=abi01a,mci01a,byx01a,brx01a,lcx01a,ilg00a,sli01a,lgi01a,lsi01a,mqb00a,job00a,atx01a,cfs01a
+cap inpool_in ROLES=tkn05a,pay05a,sts05a
+
+
+
+
+
+
+
+

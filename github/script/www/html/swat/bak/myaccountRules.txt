@@ -1,0 +1,141 @@
+##############################################
+# Rule: myaccount.*.com
+# Environment: SJVP01
+# Release: rb1002
+#
+# 2009-09-09 - [Patrick Carr] Created Original Rule for SFR Project
+# 2009-09-22 - Added regex matches - PBC FP13590
+# 2009-09-29 - [Robert Capps] Modified for My Account
+# 2009-11-19 - [Patrick Carr] Changed pool name from MYACCOUNT to MYX
+# 2009-12-10 - Added /myaccount and pointed /help at MYA pool with SSL disable - PBC
+# 2010-22-01 - Added /autobulk rule and renamed to rb1002 - MSS1
+# 2010-25-01 - Added returns to autobulk section - EUN
+# 2010-03-31 - Addeed When LB Fails for alternative to overflow - MSS
+#
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+    set queryString [URI::query [HTTP::uri]] 
+    
+    # app-specific vars to set.
+    set subdomain "myaccount"
+ 
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+ 
+    # Direct white listed applications to correct server pool
+    if {$uri matches_regex "^/login"} {
+        persist none
+        pool SJVP01-MYX
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+    elseif {$uri matches_regex "^/help"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-MYACCOUNT
+        return
+        }
+    elseif {$uri matches_regex "^/myaccount"} {
+        persist none
+        pool SJVP01-MYX
+        return
+        }
+    elseif {$uri matches_regex "^/(autobulk)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+	elseif {$uri matches_regex "^/(autobulk/bulkupload)"} {
+          persist none
+          pool SJVP01-ABX
+          return
+        }
+        else {
+            persist none
+            pool SJVP01-ABX
+            return
+        }
+    }
+	# Redirect calls made to root directory to the default server application
+    if { [HTTP::uri] matches_regex "^/?$"} {
+        HTTP::redirect "https://$subdomain.$envdomain/login/Signin"
+        return
+    }
+    else { 
+    	HTTP::redirect "http://www.$envdomain[HTTP::uri]" 
+    }
+
+}
+when LB_FAILED {
+  if { [active_members [LB::server pool]] < 1 } {
+    # The redirect will be sent only if LB_FAILED
+    # was because the pool had no available members.
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">© 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+	}
+  }
+}

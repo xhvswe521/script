@@ -1,0 +1,19 @@
+<html>
+<head>
+<title>NetOps DashBoard</title>
+</head>
+<frameset rows="64,*,64">
+<frame name="top" scrolling="no" noresize target="contents" src="dashboard-header.htm">
+<frameset cols="35%,35%,30%">
+<frame  name="contents" src="/cgi-bin/dashboard-stubhub.php?var1=SRWPINT">
+<frame  name="contents" src="/cgi-bin/dashboard-stubhub.php?var1=SRWPEXT">
+<frame  name="contents" src="/cgi-bin/dashboard-stubhub.php?var1=SBL">
+</frameset>
+<frame name="bottom" scrolling="no" noresize target="contents" src="dashboard-footer.htm">
+<noframes>
+<body>
+<CENTER><B>@ 2010-2014 StubHub, Inc. All rights reserved.<B><CENTER>
+</body>
+</noframes>
+</frameset>
+</html>

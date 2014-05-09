@@ -1,0 +1,18 @@
+#The data of App_config,We must configration the data in the following before release.
+#
+release_level:
+  level: 13.14.0-SNAPSHOT-224746.4-000 
+input:
+  dc: production
+  role: cat,ini,myx,slx,byx,brx,stj,api,rfi,ilg,tkn,pay 
+
+
+CF:
+  value: true
+
+speacial_role:
+  spe_role: jos,job,mqb,sli,abi,rfi
+
+
+
+

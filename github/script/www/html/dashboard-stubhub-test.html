@@ -1,0 +1,24 @@
+<html>
+<head>
+<title>NetOps DashBoard</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+</head>
+<!--
+<script language="JavaScript">
+  function myrefresh(){
+    window.location.reload();
+  }
+  setTimeout('myrefresh()',20000);
+</script>
+-->
+<frameset rows="64,*,64">
+  <frame name="top" scrolling="no" noresize target="contents" src="dashboard-header.htm">
+  <frameset cols="20%,30%,30%,20%">
+    <frame  name="contents" src="/cgi-bin/dashboard-stubhub-test.php?var1=SRWPINT">
+    <frame  name="contents" src="/cgi-bin/dashboard-stubhub-test.php?var1=SRWPEXT">
+    <frame  name="contents" src="/cgi-bin/dashboard-stubhub-test.php?var1=HOSTING">
+    <frame  name="contents" src="/cgi-bin/dashboard-stubhub-test.php?var1=SBL">
+  </frameset>
+  <frame name="bottom" scrolling="no" target="contents" src="dashboard-footer-test.htm">
+</frameset>
+</html>

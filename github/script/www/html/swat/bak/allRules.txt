@@ -1,0 +1,1580 @@
+---------
+# For Site Maintenance use only!
+# Apply to the top of SJVP01-VS-MAIN-PUBLIC-HTTP
+# and SJVP01-VS-MAIN-PUBLIC-HTTPS
+# to send all http requests to the overflow page
+# while the 199 Fremont network can still access the page
+# Use the Data Group List named Remote_Users
+# to add the IP addresses of users who are working off site.
+# Please clear this list at the end of each maintenance.
+
+when HTTP_REQUEST {
+        if {[matchclass [IP::remote_addr] equals $::Stubhub_Networks]}  {
+                return  
+        }
+        if {[matchclass [IP::remote_addr] equals $::Remote_Users]}  {
+                return
+        }
+        else {
+			HTTP::redirect "http://www.stubhub.com/maintenance.html"
+	}
+}
+---------
+    when CLIENT_ACCEPTED {
+        set tmm_auth_ssl_cc_ldap_sid 0
+        set tmm_auth_ssl_cc_ldap_done 0
+    }
+    when CLIENTSSL_CLIENTCERT {
+        set tmm_auth_ssl_cc_ldap_done 0
+        if {$tmm_auth_ssl_cc_ldap_sid == 0} {
+            set tmm_auth_ssl_cc_ldap_sid [AUTH::start pam default_ssl_cc_ldap]
+            if {[info exists tmm_auth_subscription]} {
+                AUTH::subscribe $tmm_auth_ssl_cc_ldap_sid
+            }
+        }
+        AUTH::cert_credential $tmm_auth_ssl_cc_ldap_sid [SSL::cert 0]
+        AUTH::authenticate $tmm_auth_ssl_cc_ldap_sid
+        SSL::handshake hold
+    }
+    when CLIENTSSL_HANDSHAKE {
+        set tmm_auth_ssl_cc_ldap_done 1
+    }
+    when AUTH_RESULT {
+        if {[info exists tmm_auth_ssl_cc_ldap_sid] and \
+            ($tmm_auth_ssl_cc_ldap_sid == [AUTH::last_event_session_id])} {
+            set tmm_auth_status [AUTH::status]
+            if {$tmm_auth_status == 0} {
+                set tmm_auth_ssl_cc_ldap_done 1
+                SSL::handshake resume
+            } elseif {$tmm_auth_status != -1 || $tmm_auth_ssl_cc_ldap_done == 0} {
+                reject
+            }
+        }
+    }
+---------
+##############################################
+# Rule: buy.*.com
+# Environment: SJVP01
+# Release: rb9210
+# Author: Robert Capps
+#
+# 2009-10-05 - [Robert Capps] Created Original Rule for SFR Project
+# 2009-11-02 - Removed ?$ from /help/
+# 2009-11-19 - [Patrick Carr] Changed pool name from MYACCOUNt to MYX
+# 2010-03-31 - Addeed When LB Fails for alternative to overflow - MSS
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+ 
+    # app-specific vars to set.
+    set subdomain "buy"
+ 
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+ 
+    # Direct white listed applications to correct server pool
+	# Redirect calls made to root directory to the default server application
+    if {$uri matches_regex "^/checkout"} {
+        persist none
+        pool SJVP01-BYX
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+    elseif { $uri matches_regex "^/help/" } {
+        pool SJVP01-MYX
+        return
+    }
+    elseif { $uri matches_regex "^/?$" } {
+        HTTP::redirect "https://$subdomain.$envdomain/checkout"
+        return
+        }
+    else { HTTP::redirect "http://www.$envdomain[HTTP::uri]" }
+return
+}
+when LB_FAILED {
+  if { [active_members [LB::server pool]] < 1 } {
+    # The redirect will be sent only if LB_FAILED
+    # was because the pool had no available members.
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">&copy; 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+	}
+  }
+}
+---------
+##############################################
+# Rule: StubHub TBDS rule
+# Environment: SJVP01
+# Release: EPR rb9230
+# Date: 2009-10-02
+# Author: Eun Sohn
+# Revision Notes:
+#   2008-02-25 - condensed a lot of similar branches.
+#   2009-12-08  - added redirect for jmx - PBC 
+#   2010-02-28  - changed jmx-console$ to jmx-console/ - PBC
+#   2010-02-28  - changed to status and web-console - PBC
+##############################################
+
+when HTTP_REQUEST {
+    set uri [HTTP::path]
+    set queryString [URI::query [HTTP::uri]]
+    set port [TCP::local_port]
+
+    # get the crossdomain.xml from a STATIC pool, not the TBDS server.
+    if {$uri matches_regex "^/crossdomain.xml$"} {
+        persist none
+        pool SJVP01-STATIC
+    }
+	 elseif {$uri matches_regex "^/(jmx-console|web-console)/"} {
+        # disallow more external access to the above services and redirect to homepage
+        HTTP::redirect "http://www.stubhub.com"
+    }
+	elseif {$uri matches_regex "^/status"} {
+        # disallow more external access to the above services and redirect to homepage
+        HTTP::redirect "http://www.stubhub.com"
+    }
+    else {
+        persist none
+        pool SJVP01-FXX
+    }
+}
+---------
+##############################################
+# Rule: Sell
+# Environment: SJVP01
+# Release: rb1002
+# 
+# 2009-09-09 - Created Rule for SFR Project - PBC
+# 2009-09-22 - Added regex matches - PBC FP13590
+# 2009-09-29 - [Eun Sohn] - added redirect rules for 
+#            - non-sell.stubhub.com applications
+#            - redirect anything not going to '/sell/' or 'sellapi'
+# 2009-11-19 - Eun Sohn - Added /help to matching 
+#            - for help pop up content via AJAX
+# 2010-01-13 - replaced /upload section with content from Ganesh - PBC
+# 2010-01-19 - Added SSL disable for /help - EUN 
+# 2010-02-12 - Added decision - PBC
+# 2010-03-31 - Added When LB Fails for alternative to overflow - MSS
+# 2010-04-02 - Added Response page for 503s
+##############################################
+ when HTTP_RESPONSE {
+	if {[HTTP::status] starts_with "50"} {
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">&copy; 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+		}
+	}
+}
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+    
+    # app-specific vars to set.
+    set subdomain "sell"
+
+    #log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+
+# eun - turning off for now.  applied to wrong environment.    
+    if { $uri matches_regex "^/help/services/" } {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-MYACCOUNT
+        return
+    }
+
+    # we want to redirect all requests to this Virtual Server that doesn't belong to it.
+    if { $host matches_regex "^$subdomain." } {
+        if { not ($uri matches_regex "^/(sell)") and not ($uri matches_regex "^/(sellapi|upload|decision)") and not ($uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$")} {
+		if { $port == 443 } {
+			# if request is secure, redirect to secure
+			HTTP::redirect "https://www.$envdomain[HTTP::uri]"
+		}
+		else {
+			HTTP::redirect "http://www.$envdomain[HTTP::uri]"
+		}
+		#return
+        }
+    }
+    
+    if {$uri matches_regex "^/(upload)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+           set contentlength [HTTP::header "Content-Length"]
+           #log local0.info "Content-Length:  $contentlength. . .PayLoad:  [HTTP::payload length]" 
+           persist none
+           pool SJVP01-UPX
+	}
+    }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC-HTTPS
+    }
+    elseif {$uri matches_regex "^/(sell|sellapi)"} {
+        # log local0.info "2nd"   
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+    elseif {$uri matches_regex "^/(listingCatalog)"} {
+        # log local0.info "2nd"   
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+	}
+	else {
+            persist none
+            pool SJVP01-SLX
+	}
+    }
+}
+when LB_FAILED {
+  if { [active_members [LB::server pool]] < 1 } {
+    # The redirect will be sent only if LB_FAILED
+    # was because the pool had no available members.
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">&copy; 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+	}
+  }
+}
+---------
+##############################################
+# Rule: StubHub secure cookie attribute iRule module
+# Environment: Development and Production
+# Release:
+# Date: 2009-01-27
+# Author: Eric Loucks
+# Changes:
+#     2009-06-02 - Don't add secure attribute to STUB_INFO cookies - EL
+##############################################
+
+when HTTP_RESPONSE {
+    set myValues [HTTP::cookie names]
+    foreach mycookie $myValues {
+        if {$mycookie == "STUB_INFO"} {
+#           Do nothing.
+        }
+        else {
+            HTTP::cookie secure $mycookie enable
+        }
+   }
+}
+---------
+##############################################
+# Rule: search.stubhub.com
+# Environment: SJVP01
+# Release: rb9190
+# Author: Robert and Matthew
+#
+# 2009-09-30 - Created Rule for Search - [RWC & MPS]
+# 2009-10-01 - Revised to Redirect Default Cold Fusion Apps - [RWC]
+# 2009-10-02 - Added '?' to Redirect for Default Cold Fusion Apps - [RWC]
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set queryString [URI::query [HTTP::uri]]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+
+    # app-specific vars to set.
+    set subdomain "search"
+
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+
+    # Direct white listed applications to correct server pool
+	# Redirect calls to non-local apps to WWW for servicing
+	# Redirect calls to non-local cold fusion apps to WWW for servicing
+    if {$uri matches_regex "^/(search|listingCatalog|listingSearch|solr)"} {
+        persist none
+        #SSL::disable serverside
+        pool SJVP01-LCS_SLAVES_RAW_QUERY
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        #SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+    elseif {$queryString matches_regex "(?i)gsec="} {
+        HTTP::redirect "http://www.$envdomain/?$queryString"
+        return
+        }
+    elseif { $uri matches_regex "^/?$" } {
+        HTTP::redirect "http://$subdomain.$envdomain/search"
+        return
+        }
+    else { HTTP::redirect "http://www.$envdomain[HTTP::uri]" }
+return
+}
+---------
+##############################################
+# Rule: myaccount.*.com
+# Environment: SJVP01
+# Release: rb1002
+#
+# 2009-09-09 - [Patrick Carr] Created Original Rule for SFR Project
+# 2009-09-22 - Added regex matches - PBC FP13590
+# 2009-09-29 - [Robert Capps] Modified for My Account
+# 2009-11-19 - [Patrick Carr] Changed pool name from MYACCOUNT to MYX
+# 2009-12-10 - Added /myaccount and pointed /help at MYA pool with SSL disable - PBC
+# 2010-22-01 - Added /autobulk rule and renamed to rb1002 - MSS1
+# 2010-25-01 - Added returns to autobulk section - EUN
+# 2010-03-31 - Addeed When LB Fails for alternative to overflow - MSS
+#
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+    set queryString [URI::query [HTTP::uri]] 
+    
+    # app-specific vars to set.
+    set subdomain "myaccount"
+ 
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+ 
+    # Direct white listed applications to correct server pool
+    if {$uri matches_regex "^/login"} {
+        persist none
+        pool SJVP01-MYX
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+    elseif {$uri matches_regex "^/help"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-MYACCOUNT
+        return
+        }
+    elseif {$uri matches_regex "^/myaccount"} {
+        persist none
+        pool SJVP01-MYX
+        return
+        }
+    elseif {$uri matches_regex "^/(autobulk)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+	elseif {$uri matches_regex "^/(autobulk/bulkupload)"} {
+          persist none
+          pool SJVP01-ABX
+          return
+        }
+        else {
+            persist none
+            pool SJVP01-ABX
+            return
+        }
+    }
+	# Redirect calls made to root directory to the default server application
+    if { [HTTP::uri] matches_regex "^/?$"} {
+        HTTP::redirect "https://$subdomain.$envdomain/login/Signin"
+        return
+    }
+    else { 
+    	HTTP::redirect "http://www.$envdomain[HTTP::uri]" 
+    }
+
+}
+when LB_FAILED {
+  if { [active_members [LB::server pool]] < 1 } {
+    # The redirect will be sent only if LB_FAILED
+    # was because the pool had no available members.
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">&copy; 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+	}
+  }
+}
+---------
+##############################################
+# Rule: static.stubhub.com/s.stubhubstatic.com
+# Environment: SJVP01
+# Release: rb1001bf
+# Author: Robert & Matthew
+#
+# 2009-09-29 - Created Rule for Static Content - [RWC & MPS]
+# 2009-09-29 - Added 404 Error Logic - [RWC]
+# 2009-10-01 - Revised 404 Error Messaging to Eliminate Parsed Fields - [RWC]
+# 2009-11-19 - removed not and trailing / on middle section - [PBC]
+# 2010-02-01 - added swz - PBC
+##############################################
+
+when HTTP_REQUEST {
+     # default vars set in most iRules written by StubHub
+     set host [HTTP::host]
+     set uri [HTTP::path]
+     set port [TCP::local_port]
+     set envdomain "[domain $host 2]"
+
+     # app-specific vars to set.
+     set subdomain1 "static"
+     set subdomain2 "s"
+
+     # we want to redirect all requests to this Virtual Server that doesn't belong to it.
+     if { $host matches_regex "^$subdomain1.|$subdomain2." and ($uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|swz|vbs|html|htm|csv|txt|crossdomain.xml)$")} {
+         if { $uri matches_regex "^/(cswebtool|cobrands|jsrs|overflow|promotions|data|resources)" } {
+           persist none
+           #SSL::disable serverside
+           pool SJVP01-STATIC
+           return
+         }
+         elseif { $uri matches_regex "^/.*" } {
+           persist none
+           #SSL::disable serverside
+           pool SJVP01-STATIC
+           return
+         }
+     }
+     else { 
+		HTTP::respond 404 content { 
+		<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+		<html><head>
+		<title>404 Not Found</title>
+		</head><body>
+		<h1>404 - Not Found</h1>
+		<p>The requested URL was not found on this server.</p>
+		<hr>
+		</body></html>
+		}
+	return
+	}
+}
+---------
+when HTTP_REQUEST {
+  if { [active_members [LB::server pool]] < 1} {
+     HTTP::respond 200 {<HTML>Sorry Full</HTML>}
+  }
+}
+---------
+##############################################
+# Rule: StubConnect
+# Environment: SJVP01
+# Release: 
+# Date: 2009-02-13
+# Author: Eric Loucks
+#     2009-04-02 - Renamed pool(s) by prepending "SJVP01-" - EL
+#     2009-08-19 - Added web-console - PBC
+##############################################
+
+when HTTP_REQUEST {
+        set uri [HTTP::path]
+
+        if {$uri matches_regex "^/(jmx-console|web-console)"} {
+                persist none
+                HTTP::redirect "http://www.stubhub.com/404.html"
+        }
+        else {
+                persist cookie
+                pool SJVP01-STUBCONNECT
+        }
+}
+---------
+##############################################
+# Rule: Ticketsearch.stubHub.com Website Rule # Environment: SJVP01 # Release: Based on rb9120 # Date: 2009-07-06 # Author: Robert Capps # Revision Notes:
+#   2009-07-06.1000 - Pulled from original SJVP01-Main-rb9120 file. - RWC
+#   2009-07-06.1300 - Approved draft of the ticketsearch rules (w/ Cass and Matthew's Approval). - RWC
+#   2009-07-06 - Added clause for sellSvc as per Cass - ETL
+#	2009-08-17 - Removed |data - PBC
+#   2009-09-09 - Added ebayTix for cobranding - CPC
+##############################################
+
+when HTTP_REQUEST {
+    set uri [HTTP::path]
+    set queryString [URI::query [HTTP::uri]]
+    set port [TCP::local_port]
+    set ebayTix "ticketsearch.stubhub.com"
+    if {$uri matches_regex "^(/robots.txt)"} {
+        HTTP::respond 200 content "User-agent: * \nDisallow: /"
+        return
+    }
+    if {$uri matches_regex "^/listingCatalog/admin"} {
+        # disallow external access to the LCS admin page and redirect to the static admin screen
+        HTTP::redirect "http://www.stubhub.com/promotions/scratch/lcs/listingCatalogAdmin.html"
+    }
+    elseif {$uri matches_regex "^/(accountex|catalog|contentManagement|creditCardSvc|emailQueuingSvc|eventSvc|feeSvc|integrationSvc|listingCatalog/admin|listingCatalog/update|logisticsSvc|notificationSvc|paymentMethodSvc|settingsSvc|shippingSvc|ticketSvc|transactionSvc|userSessionSvc|userSvc)"} {
+        # disallow external access to the above services and redirect to homepage
+        HTTP::redirect "http://www.stubhub.com/"
+    }
+    elseif {$uri matches_regex "^(/sites/intranet)|/jmx-console|/web-console|CFIDE|/listingSearch/admin|/listingSearch/update|/agents/bulkupload/autobulkSerial.cfm"} {
+        # disallow more external access to the above services and redirect to homepage
+        HTTP::redirect "http://www.stubhub.com/"
+    }
+    elseif {$queryString matches_regex "(?i)gact=browse"} {
+        persist none
+        pool SJVP01-TICKETSEARCH_BROWSE
+    }
+    elseif {$queryString matches_regex "(?i)gsec=content_form"} {
+        HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$queryString matches_regex "(?i)gsec=content"} {
+        persist none
+        pool SJVP01-TICKETSEARCH_BROWSE
+    }
+    elseif {$uri matches_regex "^/(sell/donthaveticketyet|sell/enterbarcode|sell/enterbarcodecomplete|sell/plannedoutage|sell/errorpage|sell/duplicatebarcode)"} {
+        HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(sellSvc)"} {
+        persist none
+        pool SJVP01-TICKETSEARCH_BROWSE
+    }
+    elseif {$uri matches_regex "^/(checkout|login|sell)"} {  
+        HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(confirm)"} {
+        HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(autobulk)"} {
+		HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(sitemap.xml|listingCatalog|search|listingSearch|seatmap|externalContentSvc)"} {
+        if {$uri matches_regex "^/(listingCatalog/doSearchForeBay)"} {
+            HTTP::redirect "http://www.stubhub.com/[HTTP::uri]"
+            }
+            elseif {$queryString matches_regex "(format=atom|format=html)"} {
+                HTTP::redirect "http://www.stubhub.com/[HTTP::uri]"
+            }
+            else {
+                persist none
+        		pool SJVP01-TICKETSEARCH_LCS_SLAVES
+            }
+        }
+    elseif {$queryString matches_regex "(?i)(gsec|gact|path|account)"} {
+            HTTP::redirect "https://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(payment-settings|update|my-account|login|register|stubhubsearch|cobrands|sites|agents|redirect|CFIDE)"} {
+            HTTP::redirect "http://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$uri matches_regex "^/(monitor|awaiting-shipment|modules/confirm/labels/display_label.cfm)"} {
+            HTTP::redirect "http://www.stubhub.com/[HTTP::uri]"
+    }
+    elseif {$queryString matches_regex "^/(/buy-tickets|/sell-tickets|/help)"} {
+            HTTP::redirect "http://www.stubhub.com/[HTTP::uri]"
+    }
+    else {
+        HTTP::header replace Host "ticketsearch.stubhub.com"
+        persist none
+        pool SJVP01-TICKETSEARCH_BROWSE
+    }
+}
+---------
+##############################################
+# Rule: BPM
+# Environment: SJVP00
+# Release: 
+# Date: 2009-01-26
+# Author: Eric Loucks
+#     2009-04-02 - Renamed pool(s) by prepending "SJVP01-" - EL
+#     2009-06-19 - Renamed "SJVP01"  to "SJVP00" - EL
+##############################################
+
+when HTTP_REQUEST {
+        set uri [HTTP::path]
+
+        if {$uri matches_regex "^/status"} {
+                persist none
+                HTTP::redirect "http://www.stubhub.com/404.html"
+        }
+        else {
+                persist cookie
+                pool SJVP00-BPM
+        }
+}
+---------
+##############################################
+# Rule:CTI.stubHub.com Website Rule
+# Environment: SJVP01
+# Release: n/a
+# Date: 2009-07-06
+# Author: Robert Capps
+# Revision Notes:
+#   2009-07-06.1100 - First draft of the irule to address McAfee Scan Issue on CTI. - RWC
+##############################################
+
+when HTTP_REQUEST {
+	set uri [HTTP::path]
+	set queryString [URI::query [HTTP::uri]]
+	set port [TCP::local_port]
+	if {$uri matches_regex "^(/robots.txt)"} {
+		HTTP::respond 200 content "User-agent: * \nDisallow: /"
+		return
+	}
+	elseif {$uri matches_regex "^/(ticketSvc|transactionSvc|userSvc|eventSvc|logisticsSvc)"} {
+		persist none
+		pool SJVP01-CTI
+	}
+	else {
+		HTTP::redirect "http://www.stubhub.com/404.html"
+	}
+}
+---------
+##############################################
+# Rule: StubTex Rule
+# Environment: SJVP01
+# Release: rb1002
+# Date: 2009-07-02
+# Revision Notes:
+#    2009-02-11 - Removed reference to ACCOUNTEX pool - EL
+#    2009-02-23 - Blocked accountex, shippingSvc except for shippingSvc/getLabel,
+#                 alphabetized deny list, cleaned up nesting - MPS
+#    2009-03-16 - Changed Gen3 "cs" string match for rb9050 - EL
+#    2009-03-31 - Added section for help and cstool for rb9100 - EL
+#    2009-04-03 - Removed "help" match and changed "cstool" pool to MYACCOUNT - EL
+#    2009-05-11 - Changed /cstool pool from MYACCOUNT to STUBTEX_JAVA - EL
+#    2009-05-14 - Added clause for /listingCatalog/select - EL
+#    2009-07-02 - Removed cookie persistence from STUBTEX_JAVA reference - EL
+#    2010-01-13 - Added autobulk/bulkuploaderrorreport to ABX - PBC
+#    2010-01-14 - Moved /upload before /upload/*.png - PBC
+#    2010-01-19 - Moved /upload and /upload/*.png down to main else - PBC
+#    2010-01-20 - Turned on serverssl in the virtual server and selectively
+#					disabled it.
+#    2010-01-28 - simplified rule a bit and to fix bug 19255
+#    2010-02-02 - added /autobulk/DashboardMainPage - PBC
+##############################################
+
+when HTTP_REQUEST {
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set server [HTTP::host]
+	
+    if {$uri matches_regex "^/sites/intranet/" and $port == 443 and $server == "internal.idrenalin.net" } {
+        HTTP::redirect "https://www.idrenalin.net[HTTP::uri]"
+		return
+    }
+	
+	if {$port == 443 and $uri matches_regex "^(/upload)"} {
+		# this needs SSL-encryption to the pool member.
+		persist none
+		pool SJVP01-UPX
+	}
+	elseif {$port == 443 and $uri matches_regex "^(/autobulk/bulkuploaderrorreport)"} {
+		persist none
+		pool SJVP01-ABX
+	}
+		elseif {$port == 443 and $uri matches_regex "^/autobulk/DashboardMainPage"} {
+		persist none
+		pool SJVP01-ABX
+	}
+    else {
+		# the rest of these pools do not have SSL-enabled at the Apache level.
+		SSL::disable serverside
+		
+		if {$uri matches_regex "^/shippingSvc/getLabel"} {
+			persist none
+			pool SJVP01-INTERNAL
+		}
+		elseif { $uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|csv|txt)$"  } {
+			persist none
+			pool SJVP01-STATIC
+		}
+		else {
+			if {$port == 443} {
+				if {$uri matches_regex "^/sites/intranet/modules/ext/SilentLogin.cfm" } {
+					if {$clientIP == "10.10.21.59"} {
+						persist none
+						pool SJVP01-CF_443
+					}
+					else {
+						reject
+					}
+				}
+				if {$uri matches_regex "^(/sites/intranet|/sites/data|/data)"} {
+					persist none
+					pool SJVP01-STUBTEX
+				}
+				elseif {$uri matches_regex "^/modules/confirm/labels"} {
+					persist none
+					pool SJVP01-STUBTEX
+				}
+				elseif {$uri matches_regex "^/(contentManagement|ticketDisplay|sellSvc)"} {
+					persist none
+					pool SJVP01-INTERNAL
+				}
+				elseif {$uri matches_regex "^/(cstool)"} {
+					persist none
+				#log local0.info "$uri:  got to cstool"
+					pool SJVP01-STUBTEX_JAVA
+				}
+				elseif {$uri matches_regex "^(/cs)"} {
+					if {$port != 443} {
+						HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+					}
+					persist none
+					pool SJVP01-GEN3APPS
+				}
+				elseif {$uri matches_regex "^/(listingCatalog/select)"} {
+					persist none
+					pool SJVP01-LCS_SLAVES
+				}
+				else {
+					reject
+				}
+			}
+		}
+    }
+}
+---------
+##############################################
+# Rule: StubHub Website Rule
+# Environment: SJVP01
+# Release: rb1006
+# Date: 2009-07-28
+# Revision Notes:
+#   2008-02-25 - condensed a lot of similar branches.
+#                added sell, login, sellSvc, integrationSvc, feeSvc, creditCardSvc
+#   2008-03-10 - Added the LCS Raw query pool configuration.
+#   2008-09-04 - Added HTML format matching and externalContentSvc to ATOM pool. - EL
+#   2008-10-17 - Redirected sellSvc to BROWSE pools - MPS
+#   2008-11-04 - Changed regex content to contentManagement for rb8070 -EC
+#   2008-11-05 - Removed the marketing typo URL redirects -EC
+#   2008-11-05 - Moved the disallow external access regexes to the top of the rule -EC
+#   2008-12-02 - Added the DISRUPTIVE project entry -EC
+#   2008-12-23 - Added doSearchForeBay logic - CC
+#   2009-02-07 - Blocked userSvc - EL
+#   2009-02-11 - Removed reference to ACCOUNTEX pool - EL
+#   2009-02-23 - Block accountex, listingCatalog/admin, listingCatalog/update, notificationSvc, settingsSvc,
+#                shippingSvc except for shippingSvc/getLabel, alphabetized deny list, cleaned up nesting - MPS
+#   2009-03-16 - Added rb9050 Gen3 confirm, added historical notes, normalized indentation - EL
+#   2009-03-31 - Added section for help - EL
+#   2009-04-09 - Changed "help" pool to MYACCOUNT - EL
+#   2009-04-09 - Added trailing slash to "help" reference - EL
+#   2009-05-28 - Added "sell/duplicatebarcode" to go to GEN3APPS for rb9110 - EL
+#   2009-06-08 - Added "autobulk" to go to AUTOBULK_LITE for rb9120 - EL
+#   2009-06-25 - Added LCS rewrites for bug 15043 for rb9130 - MPS
+#   2009-06-26 - Removed sticky sessions for bug 15312 for rb9130 - MPS
+#   2009-06-30 - Renamed AUTOBULK_LITE to AUTOBULK_POC - EL
+#   2009-07-27 - Changed /search from /search/ for bug 15482 for rb9150 - MPS
+#   2009-10-02 - Added EPR routing for ticket and event details pages (to SJVP01-G3-BRX)
+#   2009-10-02 - Added EPR routing rule for /myaccount (to SJVP01-MYACCOUNT)
+#   2009-10-05 - Added EPR routing rule for /components/services/ (to SJVP01-G3_CMI_API)
+#   2009-10-22 - Added Ticket Display Block - PBC
+#   2009-10-30 - Added isGen2Event=1 block for routing to old browse CPC
+#   2009-11-16 - Added /event/services clause for EPR
+#   2009-12-02 - Removed EPR routing rule for /components/services/ per Sunil  PBC
+#   2009-12-08 - Removed all ID rule for BRX and added a specific ID - PBC
+#   2009-12-09 - Removed ticket_id rule for BRX - PBC
+#   2009-12-10 - Removed /myaccount - PBC
+#   2009-12-10 - Added ticket_id and all eventID's back - PBC
+#   2009-12-30 - Added autobulk/dashboardmainpage for rb1002 - PBC
+#   2010-01-06 - Renamed rb1002 - PBC
+#   2010-03-02 - added  myaccount/pricealert - PBC
+#   2010-03-02 - Renamed to 1004 - MSS
+#	2010-03-25 - Removed /autobulk/dashboardmain page. Renamed to 1006 - MSS
+#   2010-03-31 - Addeed When LB Fails for alternative to overflow - MSS
+#	2010-04-14 - Added /listingCatalog/update and /listingSearch/update and /solr/update to homepage redirect logic - CPC
+#	2010-04-14 - Routed all LCS traffic except /listingCatalog/select away from LCS_SLAVES_RAW_QUERY - CPC
+##############################################
+
+when HTTP_REQUEST {
+    set uri [HTTP::path]
+    set queryString [URI::query [HTTP::uri]]
+    set port [TCP::local_port]
+	set srcIP [IP::client_addr]
+    if {$uri matches_regex "^(/robots.txt)" and $port == 443} {
+        HTTP::respond 200 content "User-agent: * \nDisallow: /"
+        return
+    }
+    if {$uri matches_regex "^/listingCatalog/admin"} {
+        # disallow external access to the LCS admin page and redirect to the static admin screen
+        HTTP::redirect "http://[HTTP::host]/promotions/scratch/lcs/listingCatalogAdmin.html"
+    }
+    elseif {$uri matches_regex "^/shippingSvc/getLabel"} {
+        # allow external access to label display, which has to be before the disallow 
+        persist none
+        pool SJVP01-BROWSE
+    }
+    elseif {$uri matches_regex "^/(listingCatalog/update|solr/update|listingSearch/update|accountex|catalog|contentManagement|creditCardSvc|emailQueuingSvc|eventSvc|feeSvc|integrationSvc|listingCatalog/admin|listingCatalog/update|logisticsSvc|notificationSvc|paymentMethodSvc|settingsSvc|shippingSvc|ticketSvc|transactionSvc|userSessionSvc|userSvc)"} {
+        # disallow external access to the above services and redirect to homepage
+        HTTP::redirect "http://[HTTP::host]"
+    }
+    elseif {$uri matches_regex "^/listingCatalog/static/schema.xml"} {
+        # rewrite external access to the LCS schema file and mask the public/private translation... this is a test function and, worst case, just fails
+        HTTP::uri "http://[HTTP::host]/listingCatalog/admin/get-file.jsp?file=schema.xml"
+        persist none
+        pool SJVP01-LCS_SLAVES
+    }
+    elseif {$uri matches_regex "^(/sites/intranet)|/jmx-console|/web-console|CFIDE|/listingSearch/admin|/listingSearch/update|/agents/bulkupload/autobulkSerial.cfm"} {
+        # disallow more external access to the above services and redirect to homepage
+        HTTP::redirect "http://[HTTP::host]"
+    }
+    elseif {$uri matches_regex "^/((stubnext-buy-flow-web/.*)|(b/.*))"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+            persist none
+            pool SJVP01-DISRUPTIVE
+        }
+    }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        pool SJVP01-STATIC
+    }
+    elseif {$uri matches_regex "^(/public/data)"} {
+        persist none
+        pool SJVP01-STATIC
+    }
+    elseif {$queryString matches_regex "(?i)gact=browse"} {
+        persist none
+        pool SJVP01-BROWSE
+    }
+    elseif {$queryString matches_regex "(?i)gsec=content_form"} {
+        if {$port == 443} {
+            persist none
+            pool SJVP01-CF_443
+        }
+        else {
+            persist none
+            pool SJVP01-CF
+        }
+    }
+    elseif {$queryString matches_regex "(?i)gsec=content"} {
+        persist none
+        pool SJVP01-BROWSE
+    }
+    elseif {$uri matches_regex "^/(sellSvc)"} {
+        persist none
+        pool SJVP01-BROWSE
+    }
+    elseif {$uri matches_regex "^/(sell/donthaveticketyet|sell/enterbarcode|sell/enterbarcodecomplete|sell/plannedoutage|sell/errorpage|sell/duplicatebarcode)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+            persist none
+            pool SJVP01-GEN3APPS
+        }
+    }
+    elseif {$uri matches_regex "^/(checkout|login|sell)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+            persist none
+            pool SJVP01-BUY
+        }
+    }
+    elseif {$uri matches_regex "^/(help/)"} {
+        persist none
+        pool SJVP01-MYACCOUNT
+    }
+    elseif {$uri matches_regex "^/(confirm)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+            persist none
+            pool SJVP01-GEN3APPS
+        }
+    }
+    elseif {$uri matches_regex "^/(autobulk)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+		elseif {$uri matches_regex "^/autobulk/bulkupload"} {
+          persist none
+          pool SJVP01-ABX
+        }
+        else {
+            persist none
+            pool SJVP01-ABX
+        }
+    }
+    elseif {$uri matches_regex "^/(sitemap.xml|listingCatalog|search|listingSearch|seatmap|externalContentSvc)"} {
+        if {$uri matches_regex "^/(listingCatalog/doSearchForeBay)"} {
+            persist none
+            pool SJVP01-LCS_EBAY
+        }
+        elseif {$queryString matches_regex "(format=atom|format=html)"} {
+          if {$uri matches_regex "^/listingSearch/"} {
+              HTTP::uri "http://[HTTP::host]/listingCatalog/[substr [HTTP::uri] 15]"
+          }
+          elseif {$uri matches_regex "^/search"} {
+              HTTP::uri "http://[HTTP::host]/listingCatalog[substr [HTTP::uri] 7]"
+          }
+          persist none
+          pool SJVP01-LCS_EBAY
+        }
+        elseif {$uri matches_regex "^/listingCatalog/select"} {
+            persist none
+            pool SJVP01-LCS_SLAVES_RAW_QUERY
+        }
+        elseif {$uri matches_regex "^/listingSearch/select"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/select[substr [HTTP::uri] 21]"
+            persist none
+            pool SJVP01-LCS_SLAVES_RAW_QUERY
+        }
+        elseif {$uri matches_regex "^/listingSearch/"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/[substr [HTTP::uri] 15]"
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+        elseif {$uri matches_regex "^/search"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/[substr [HTTP::uri] 7]"
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+        elseif {$uri matches_regex "^/seatmap/"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/[substr [HTTP::uri] 9]"
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+        elseif {$uri matches_regex "^/solr"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/[substr [HTTP::uri] 5]"
+            persist none
+            pool SJVP01-LCS_SLAVES_RAW_QUERY
+        }
+        elseif {$uri matches_regex "^/sitemap"} {
+            HTTP::uri "http://[HTTP::host]/listingCatalog/sitemap?more=$[substr [HTTP::uri] 8]"
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+        elseif {$uri matches_regex "^/listingCatalog/"} {
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+        else {
+            HTTP::uri "[HTTP::uri]&bigip=0"
+            persist none
+            pool SJVP01-LCS_SLAVES
+        }
+    }
+    elseif {$queryString matches_regex "(?i)(gsec|gact|path)"} {
+        if {$port == 443} {
+            persist none
+            pool SJVP01-CF_443
+        }
+        else {
+            persist none
+            pool SJVP01-CF
+        }
+    }
+    elseif {$uri matches_regex "^/(payment-settings|update|my-account|login|register|stubhubsearch|cobrands|sites|agents|jsrs|redirect|CFIDE|data)"} {
+        if {$port == 443} {
+            persist none
+            pool SJVP01-CF_443
+        }
+        else {
+            persist none
+            pool SJVP01-CF
+        }
+    }
+    elseif {$uri matches_regex "^/(monitor|awaiting-shipment|modules/confirm/labels/display_label.cfm)"} {
+        persist none
+        pool SJVP01-CF_443
+    }
+    elseif {$uri matches_regex "^/(lmsform)"} {
+        persist none
+        pool SJVP01-REST
+    }
+	elseif {$uri matches_regex "^/(ticketDisplay)"} {
+        if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        else {
+            persist none
+            pool SJVP01-BROWSE
+        }
+    }
+    elseif {$uri matches_regex "^/event/services"} {
+    	persist none
+    	pool SJVP01-G3-BRX
+    }
+	elseif {$uri matches_regex "^/myaccount/pricealert"} {
+        persist none
+        pool SJVP01-MYACCOUNT
+ 	}
+    elseif {$queryString matches_regex "isGen2Event=1"} {
+    	persist none
+    	pool SJVP01-BROWSE
+    }
+    elseif {$queryString matches_regex "ticket_id"} {
+    	persist none
+    	pool SJVP01-G3-BRX
+    }
+    elseif {$uri matches_regex {-[0-9][0-9][0-9][0-9][0-9][0-9]}} {
+    	persist none
+    	pool SJVP01-G3-BRX
+    }
+    else {
+        persist none
+        pool SJVP01-BROWSE
+    }
+}
+when LB_FAILED {
+log local0. "LB Failed to [LB::server]."
+log local0. "[HTTP::path], $uri, $port, source = $srcIP"
+}
+---------
+##############################################
+# Rule: search.stubhub.com
+# Environment: SJVP01
+# Release: rb9190
+# Author: Robert and Matthew
+#
+# 2009-09-30 - Created Rule for Search - [RWC & MPS]
+# 2009-10-01 - Revised to Redirect Default Cold Fusion Apps - [RWC]
+# 2009-10-02 - Added '?' to Redirect for Default Cold Fusion Apps - [RWC]
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set queryString [URI::query [HTTP::uri]]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+
+    # app-specific vars to set.
+    set subdomain "search"
+
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+
+    # Direct white listed applications to correct server pool
+	# Redirect calls to non-local apps to WWW for servicing
+	# Redirect calls to non-local cold fusion apps to WWW for servicing
+    if {$uri matches_regex "^/(search|listingCatalog|listingSearch|solr)"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-LCS_SLAVES_RAW_QUERY
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+    elseif {$queryString matches_regex "(?i)gsec="} {
+        HTTP::redirect "http://www.$envdomain/?$queryString"
+        return
+        }
+    elseif { $uri matches_regex "^/?$" } {
+        HTTP::redirect "http://$subdomain.$envdomain/search"
+        return
+        }
+    else { HTTP::redirect "http://www.$envdomain[HTTP::uri]" }
+return
+}
+---------
+##############################################
+# Rule: static.stubhub.com/s.stubhubstatic.com
+# Environment: SJVP01
+# Release: rb9190
+# Author: Robert & Matthew
+#
+# 2009-09-29 - Created Rule for Static Content - [RWC & MPS]
+# 2009-09-29 - Added 404 Error Logic - [RWC]
+# 2009-10-01 - Revised 404 Error Messaging to Eliminate Parsed Fields - [RWC]
+# 2009-11-19 - removed not and trailing / on middle section - [PBC]
+# 2010-02-01 - added swz - PBC
+##############################################
+
+when HTTP_REQUEST {
+     # default vars set in most iRules written by StubHub
+     set host [HTTP::host]
+     set uri [HTTP::path]
+     set port [TCP::local_port]
+     set envdomain "[domain $host 2]"
+
+     # app-specific vars to set.
+     set subdomain1 "static"
+     set subdomain2 "s"
+
+     # we want to redirect all requests to this Virtual Server that doesn't belong to it.
+     if { $host matches_regex "^$subdomain1.|$subdomain2." and ($uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|swz|vbs|html|htm|csv|txt|crossdomain.xml)$")} {
+         if { $uri matches_regex "^/(cswebtool|cobrands|jsrs|overflow|promotions|data|resources)" } {
+           #log local3.info "static ssl 1"   
+		   persist none
+           SSL::disable serverside
+           pool SJVP01-STATIC
+           return
+         }
+         elseif { $uri matches_regex "^/.*" } {
+		   #log local3.info "static ssl 2"
+           persist none
+           SSL::disable serverside
+           pool SJVP01-STATIC
+           return
+         }
+     }
+     else { 
+		#log local3.info "static ssl 3" 
+		HTTP::respond 404 content { 
+		<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML 2.0//EN">
+		<html><head>
+		<title>404 Not Found</title>
+		</head><body>
+		<h1>404 - Not Found</h1>
+		<p>The requested URL was not found on this server.</p>
+		<hr>
+		</body></html>
+		}
+	return
+	}
+}
+---------
+# For Site Maintenance use only!
+# Apply to the top of SJVP01-VS-MAIN-PUBLIC-HTTP
+# and SJVP01-VS-MAIN-PUBLIC-HTTPS
+# to send all http requests to the overflow page
+# while the 199 Fremont network can still access the page
+# Use the Data Group List named Remote_Users
+# to add the IP addresses of users who are working off site.
+# Please clear this list at the end of each maintenance.
+
+when HTTP_REQUEST {
+        if {[matchclass [IP::remote_addr] equals $::Stubhub_Networks]}  {
+                return  
+        }
+        if {[matchclass [IP::remote_addr] equals $::Remote_Users]}  {
+                return
+        }
+        else reject
+}
+---------
+##############################################
+# Rule: buy.*.com
+# Environment: SJVP01
+# Release: rb1007
+#
+# 2009-10-05 - [Robert Capps] Created Original Rule for SFR Project
+# 2009-11-02 - Removed ?$ from /help/
+# 2009-11-19 - [Patrick Carr] Changed pool name from MYACCOUNt to MYX
+# 2010-04-07 - Added /content/getPromoContent rule - MSS
+# 2010-04-09 - changed /content/getPromoContent rule to match regex and point at Browse with SSL disable-  PBC
+# 2010-04-09 - Renamed to rb1007
+##############################################
+ 
+when HTTP_REQUEST {
+    # default vars set in most iRules written by StubHub
+    set host [HTTP::host]
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+    set envdomain "[domain $host 2]"
+	
+    # app-specific vars to set.
+    set subdomain "buy"
+ 
+    # log local0.info "HOST: $host   URI: [HTTP::uri]  ENVDOMAIN: $envdomain"
+	
+    # Direct white listed applications to correct server pool
+	# Redirect calls made to root directory to the default server application
+    if {$uri matches_regex "^/checkout"} {
+        persist none
+        pool SJVP01-BYX
+        return
+        }
+    elseif {$uri matches_regex "(jpg|bmp|gif|png|img|ico|js|css|swf|vbs|html|htm|csv|txt|crossdomain.xml)$"} {
+        persist none
+        SSL::disable serverside
+        pool SJVP01-STATIC
+        return
+        }
+	elseif { $uri matches_regex "^/content/getPromoContent"} {
+		SSL::disable serverside
+		pool SJVP01-BROWSE
+		return
+	}
+    elseif { $uri matches_regex "^/help/" } {
+        pool SJVP01-MYX
+        return
+    }
+    elseif { $uri matches_regex "^/?$" } {
+        HTTP::redirect "https://$subdomain.$envdomain/checkout"
+        return
+        }
+    else { HTTP::redirect "http://www.$envdomain[HTTP::uri]" }
+return
+}
+when LB_FAILED {
+  if { [active_members [LB::server pool]] < 1 } {
+    # The redirect will be sent only if LB_FAILED
+    # was because the pool had no available members.
+	HTTP::respond 503 content { 
+	<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+		<html>
+		<head>
+		<title>StubHub Ticket Marketplace</title>
+			<meta http-equiv="refresh" content="15">
+			<META name="ROBOTS" content="NOINDEX, NOFOLLOW">
+			<META name="GOOGLEBOT" content="NOINDEX, NOFOLLOW">
+		</head>
+			<body style="color:#444;font-family:Arial, Helvetica, sans-serif; font-size:12px;width:950px;">
+			<div id="headerlogo"><a href="/" title="StubHub.com"><img src="https://s.stubhubstatic.com/cobrands/default/images/stubhub.gif" width="142" height="60" alt="Concert Tickets, Broadway Tickets, and Sports Tickets at StubHub!"  border="0"></a></div>
+			<div style="border-bottom:1px solid #999; padding-top:10px;"> </div>
+			<div id="body">
+			<div align="center" style="padding-top:20px;"><img src="https://s.stubhubstatic.com/resources/mojito/img/pattern/phoenix/throbber_24.gif">
+			<p style="font-size:large; ">Hang on while we process your request. <br/>You'll be on your way in 15 seconds.</p>
+		</div>
+		</div>
+		<div id="footer" style="font-size:10px; color:#444; margin-top:60px;">
+		<div id="footer_img" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_hands.gif);height:71px;margin:0;padding:0;width:100%;"></div>
+		<div id="footer_main_cont" style="background-image:url(https://s.stubhubstatic.com/promotions/scratch/sh/footer_grad.gif);background-repeat:repeat-x;height:70px;margin-left:0;padding:0 0 0px;width:100%;">
+			<div class="copy" style="padding:20px 0 0 15px">&copy; 2000 - 2009 StubHub, Inc. All rights reserved.</div>
+		</div>
+		</div>
+
+		<!-- STC-HLD-PG -->
+		<script language="JavaScript"><!--
+			var s_account="stubhub"
+		//--></script>
+			<script language="JavaScript" src="https://static.stubhub.com/promotions/scratch/test/lite_s_code_02032010.js"></script>
+			<script language="JavaScript"><!--
+				s.pageName = "overflow";
+				s.server=""
+				s.channel=""
+				s.pageType=""
+				s.prop1=""
+				s.prop2=""
+				s.prop3=""
+				s.prop4=""
+				s.prop5=""
+				s.hier1=""
+				s.campaign=""
+				s.state=""
+				s.zip=""
+				s.events=""
+				s.products=""
+				s.purchaseID=""
+				s.eVar1=""
+				s.eVar2=""
+				s.eVar3=""
+				s.eVar4=""
+				s.eVar5=""
+				s.eVar26=""
+				s.eVar27=""
+			var s_code=s.t();if(s_code)document.write(s_code)//-->
+		</script>
+		</body>
+		</html>
+	}
+  }
+}
+---------
+##############################################
+# Rule: Internal Services
+# Environment: SJVP01
+# Release: rb9190
+# Author: Eun Sohn, Eric Loucks
+# 2008-12-12 - allowed /stubhubapi/Verisign on port 80, 
+#              removed queryString,
+#              added clause for /listingmgr - EL
+# 2009-04-13 - Added clause for internalstubhubapi going to new ILOG pool,
+#              normalized indentation - EL
+# 2009-06-03 - Added clause for /stubhubapi/Campaign going to API pool - EL
+# 2009-09-29 - Added Dynamic discount rules api and stubhubapi discount - PBC 
+##############################################
+
+when HTTP_REQUEST {
+    set uri [HTTP::path]
+    set port [TCP::local_port]
+
+    if {$uri matches_regex "^/(transactionSvc|shippingSvc|paymentMethodSvc|emailQueuingSvc|userSvc|ticketSvc|eventSvc|creditCardSvc|integrationSvc|ticketDisplay|sellSvc|feeSvc|confirm|settingsSvc)"} {
+        persist none
+        pool SJVP01-INTERNAL
+    }
+    elseif {$uri matches_regex "^/(content|logisticsSvc)"} {
+        persist none
+        pool SJVP01-BROWSE
+    }
+    elseif {$uri matches_regex "^/(offersrulesengineapi|dynamicdiscountrulesengineapi)"} {
+        persist none
+        pool SJVP00-ILOG
+    }
+    elseif {$uri matches_regex "^/(listingmgr)"} {
+        persist none
+        pool SJVP01-LISTINGMGR
+    }
+    elseif {$uri matches_regex "^/stubhubapi/Verisign"} {
+        persist none
+        pool SJVP01-API
+    }
+    elseif {$uri matches_regex "^(/stubhubapi/Campaign|/stubhubapi/Discount)"} {
+        persist none
+        pool SJVP01-API
+    }
+    elseif {$uri matches_regex "^/(stubhubapi)"} {
+        if { $port == 443 } {
+            persist none
+            pool SJVP01-API
+        }
+    }
+    else {
+        persist none
+        HTTP::redirect "http://www.stubhub.com/404.html"
+    }
+}
+---------
+##############################################
+# Rule: StubConnect
+# Environment: SJVP01
+# Release: 
+# Date: 2009-02-13
+#     2009-04-02 - Renamed pool(s) by prepending "SJVP01-" - EL
+#     2009-08-19 - Added web-console - PBC
+#	  2010-03-19 - Added Https redirect - PBC
+##############################################
+
+when HTTP_REQUEST {
+        set uri [HTTP::path]
+		set my_uri [HTTP::uri]   
+		set my_host [HTTP::host]   
+		set my_query [HTTP::query]
+		set port [TCP::local_port]
+
+    if {$port != 443} {
+            HTTP::redirect "https://[HTTP::host][HTTP::uri]"
+        }
+        elseif {$uri matches_regex "^/(jmx-console|web-console)"} {
+                persist none
+                HTTP::redirect "http://www.stubhub.com/404.html"
+        }
+	else {
+                persist cookie
+                pool SJVP01-STUBCONNECT
+        }
+} 
+

@@ -1,0 +1,246 @@
+#!/usr/bin/perl
+#----------------------------------------------------------------------------
+
+#use SOAP::Lite + trace => qw(method debug);
+use SOAP::Lite;
+
+#----------------------------------------------------------------------------
+# Validate Arguments
+#----------------------------------------------------------------------------
+my $sHost = "10.80.66.35";
+my $sHost2 = "10.80.66.35";
+my $sUID = "dashboard";
+my $sPWD = "F\@172B\@N";
+#my $sNodeAddr = $ARGV[1];
+my $sProtocol = "https";
+my $sPool     = "";
+my $sNodeAddr = "";
+
+
+sub usage()
+{
+	die ("Usage: pool-status.pl Pool Name \n");
+}
+
+#if ( ($sNodeAddr eq "") )
+#{
+#	usage();
+#}
+
+
+#----------------------------------------------------------------------------
+# Transport Information
+#----------------------------------------------------------------------------
+sub SOAP::Transport::HTTP::Client::get_basic_credentials
+{
+	return "$sUID" => "$sPWD";
+}
+
+$Pool = SOAP::Lite
+	-> uri('urn:iControl:LocalLB/Pool')
+	-> readable(1)
+	-> proxy("$sProtocol://$sHost/iControl/iControlPortal.cgi");
+$PoolMember = SOAP::Lite
+	-> uri('urn:iControl:LocalLB/PoolMember')
+	-> readable(1)
+	-> proxy("$sProtocol://$sHost/iControl/iControlPortal.cgi");
+
+#----------------------------------------------------------------------------
+# Attempt to add auth headers to avoid dual-round trip
+#----------------------------------------------------------------------------
+eval { $Pool->transport->http_request->header
+(
+	'Authorization' =>
+	'Basic ' . MIME::Base64::encode("$sUID:$sPWD", '')
+); };
+eval { $PoolMember->transport->http_request->header
+(
+	'Authorization' =>
+	'Basic ' . MIME::Base64::encode("$sUID:$sPWD", '')
+); };
+
+#----------------------------------------------------------------------------
+# support for custom enum types
+#----------------------------------------------------------------------------
+sub SOAP::Deserializer::typecast
+{
+	my ($self, $value, $name, $attrs, $children, $type) = @_;
+	my $retval = undef;
+	if ( "{urn:iControl}Common.EnabledState" == $type )
+	{
+		$retval = $value;
+	}
+	return $retval;
+}
+
+#----------------------------------------------------------------------------
+# Main logic
+#----------------------------------------------------------------------------
+if ( "" eq $sPool )
+{
+	#------------------------------------------------------------------------
+	# No pool supplied.  Query pool list and display members for given pool
+	#------------------------------------------------------------------------
+	$soapResponse = $Pool->get_list();
+	&checkResponse($soapResponse);
+	@pool_list = @{$soapResponse->result};
+	
+	&showPoolMembers(@pool_list);
+}
+elsif ( "" eq $sNodeAddr )
+{
+	#------------------------------------------------------------------------
+	# Pool supplied, but now member so display given pools members
+	#------------------------------------------------------------------------
+	&showPoolMembers($sPool);
+}
+else
+{
+	#------------------------------------------------------------------------
+	# both pool and member supplied so toggle the specified member.
+	#------------------------------------------------------------------------
+	&togglePoolMember($sPool, $sNodeAddr);
+}
+
+#----------------------------------------------------------------------------
+# Show list of pools and members
+#----------------------------------------------------------------------------
+sub showPoolMembers()
+{
+	my (@pool_list) = @_;
+	my @member_state_lists = &getPoolMemberStates(@pool_list);
+	
+	print "Available pool members\n";
+	print "======================\n";
+	$i = 0;
+	foreach $pool (@pool_list)
+	{
+		print "pool $pool\n{\n";
+		@member_state_list = @{@member_state_lists[$i]};
+		foreach $member_state (@member_state_list)
+		{
+			$member = $member_state->{"member"};
+			$addr = $member->{"address"};
+			$port = $member->{"port"};
+
+			$session_state = $member_state->{"session_state"};
+
+			print "    $addr:$port ($session_state)\n";
+		}
+		print "}\n";
+		$i++;
+	}
+}
+
+#----------------------------------------------------------------------------
+# Toggle a specified pool member
+#----------------------------------------------------------------------------
+sub togglePoolMember()
+{
+	my ($pool_name, $member_def) = (@_);
+	
+	#------------------------------------------------------------------------
+	# Split apart node:port 
+	#------------------------------------------------------------------------
+	($sNodeIP, $sNodePort) = split(/:/, $member_def, 2);
+	if ( "" eq $sNodePort )
+	{
+		$sNodePort = "0";
+	}
+	$member = { address => $sNodeIP, port => $sNodePort };
+
+	#--------------------------------------------------------------------
+	# Query enabled state for given Node:port
+	#--------------------------------------------------------------------
+	$pool_member_state = &getPoolMemberState($pool_name, $member);
+
+	#----------------------------------------------------------------
+	# Set the state to be toggled to.
+	#----------------------------------------------------------------
+	my $toggleState = "STATE_DISABLED";
+	if ( "STATE_DISABLED" eq $pool_member_state )
+	{
+		$toggleState = "STATE_ENABLED";
+	}
+	elsif ( "STATE_ENABLED" eq $pool_member_state )
+	{
+		$toggleState = "STATE_DISABLED";
+	}
+	else
+	{
+		die("Couldn't find member $member_def in pool $pool_name\n");
+	}
+	
+	$MemberSessionState = 
+	{
+		member => $member,
+		session_state => $toggleState
+	};
+	push @MemberSessionStateList, $MemberSessionState;
+	push @MemberSessionStateLists, [@MemberSessionStateList];
+
+	#----------------------------------------------------------------
+	# Toggle the state.
+	#----------------------------------------------------------------
+	$soapResponse =
+		$PoolMember->set_session_enabled_state
+		(
+			SOAP::Data->name ( pool_names => ( [$pool_name] ) ),
+			SOAP::Data->name ( session_states => [@MemberSessionStateLists] )	
+		);
+	&checkResponse($soapResponse);
+
+	print "Pool Member $pool_name {$sNodeIP:$sNodePort} state set from '$pool_member_state' to '$toggleState'\n";
+}
+
+#----------------------------------------------------------------------------
+# returns the status structures for the members of the specified pools
+#----------------------------------------------------------------------------
+sub getPoolMemberStates()
+{
+	my (@pool_list) = @_;
+
+	$soapResponse = $PoolMember->get_session_enabled_state
+	(
+		SOAP::Data->name(pool_names => [@pool_list])
+	);
+	&checkResponse($soapResponse);
+	@member_state_lists = @{$soapResponse->result};
+
+	return @member_state_lists;
+}
+
+#----------------------------------------------------------------------------
+# Get the actual state of a given pool member
+#----------------------------------------------------------------------------
+sub getPoolMemberState()
+{
+	my ($pool_name, $member_def) = (@_);
+	my $state = "";
+	@member_state_lists = &getPoolMemberStates($pool_name);
+	@member_state_list = @{@member_state_lists[0]};
+	foreach $member_state (@member_state_list)
+	{
+		my $member = $member_state->{"member"};
+		if ( ($member->{"address"} eq $member_def->{"address"}) and
+		     ($member->{"port"} eq $member_def->{"port"}) )
+		{
+			$state = $member_state->{"session_state"}
+		}
+	}
+	return $state;
+}
+
+#----------------------------------------------------------------------------
+# checkResponse
+#----------------------------------------------------------------------------
+sub checkResponse()
+{
+	my ($soapResponse) = (@_);
+	if ( $soapResponse->fault )
+	{
+		print $soapResponse->faultcode, " ", $soapResponse->faultstring, "\n";
+		exit();
+	}
+}
+

@@ -1,0 +1,139 @@
+Rb13.11.0-SNAPSHOT-214041.8-000	
+Backup Config and NAS locations (/nas/utl/backup)
+
+
+
+
+
+
+cap checkup:health  ROLES=myx01,slx01,byx01,brx01,abi01,api01,apx01,sli01,rfi01,stj01 2>&1 | grep out | sort
+
+cap checkup:package  ROLES=myx01,slx01,byx01,brx01,abi01,api01,apx01,sli01,rfi01,stj01 2>&1 | grep out | sort
+
+cap checkup:code  ROLES=myx01,slx01,byx01,brx01,abi01,api01,apx01,sli01,rfi01,stj01 2>&1 | grep out | sort
+
+
+cap backup:code  ROLES=myx01,slx01,byx01,brx01,abi01,api01,apx01,sli01,rfi01,stj01 2>&1 | grep out | sort
+
+Rsync the build
+[COMMAND] ./replicator -l 13.11.0-SNAPSHOT-214041.8-000
+
+[COMMAND]
+cap inpool_out ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a;
+
+
+
+STOP HTTPD and JBOSS on pool A
+[COMMAND] 
+cap stop:httpd  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a;
+
+cap stop:jboss  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a;
+
+Deploy package on pool A
+[COMMAND]
+cap -s build_label=13.11.0-SNAPSHOT-214041.8-000 deploy:package ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a;
+
+
+
+[DOING] Start HTTPD and JBOSS on pool A
+[COMMAND]
+cap start:httpd  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+cap start:jboss  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+cap inpool_out ROLES=job00b
+cap stop:jboss ROLES=job00b
+cap inpool_out ROLES=jos05b
+cap stop:jboss ROLES=jos05b
+
+
+SWAP Pool A/B
+[COMMAND]
+cap inpool_in ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a;cap inpool_out ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b;
+
+
+FLEX
+Mgt002
+#/nas/reg/deploy/bin/deploy-flex-to-prod /nas/reg/deploy/releases/rb_ecomm_13_4_1/2013-03-15/flex-files.20130315.010326+0000.tar
+
+STATIC
+
+/nas/reg/bin/sinstall -tag rb_ecomm_13_11_static_cf
+
+cap stop:jboss ROLES=sli01b,abi01b,rfi01b
+
+
+Deploy Pool B
+
+Stop httpd and jboss; Deploy package; Start httpd and jboss
+[COMMAND]
+cap stop:httpd ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b;
+
+cap stop:jboss  ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b;
+
+Deploy package on pool B
+[COMMAND]
+cap -s build_label=13.11.0-SNAPSHOT-214041.8-000 deploy:package ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b;
+
+
+cap start:jboss  ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b
+
+cap start:httpd  ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b
+
+
+
+Put back in pool B
+[COMMAND]
+
+cap inpool_in ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b
+
+
+#Rollback Plan
+6.2
+
+cap start:jboss ROLES=sli01b,abi01b,rfi01b
+
+
+[COMMAND]
+cap inpool_in ROLES=myx01b,slx01b,byx01b,brx01b,abi01b,api01b,apx01b,sli01b,rfi01b,stj01b;cap inpool_out ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+6.4
+
+ssh srwp01mgt002.stubprod.com
+/usr/local/reg/bin/sinstall -tag rb13_11_cfm_cf -rollback
+/usr/local/reg/bin/sinstall -tag rb13_11_static_cf -rollback
+
+#/nas/reg/deploy/bin/deploy-flex-to-prod /nas/reg/deploy/releases/rb1303/2013-01-29/flex-files.20130129.013415+0000.tar rollback
+
+6.6
+
+[COMMAND]
+cap stop:httpd ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+cap stop:jboss  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+Deploy package on pool A
+[COMMAND]
+
+cap -s build_label=13.11.0-SNAPSHOT-216125.46-003 deploy:package ROLES=sli01a
+cap -s build_label=13.11.0-SNAPSHOT-214041.8-000 deploy:package ROLES=brx01a,abi01a,rfi01a
+cap -s build_label=13.11.0-SNAPSHOT-217555.60-001 deploy:package ROLES=byx01a,apx01a 
+
+Start HTTPD and JBOSS on pool A
+[COMMAND]
+cap start:httpd ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+cap start:jboss  ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+
+cap inpool_in ROLES=myx01a,slx01a,byx01a,brx01a,abi01a,api01a,apx01a,sli01a,rfi01a,stj01a
+
+
+
+
+
+
+
+
+
+
